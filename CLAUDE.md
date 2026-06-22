@@ -3,18 +3,20 @@
 ## Project
 
 Download CHELSA V2.1 monthly climatologies (1981–2010) of temperature (`tas`)
-and precipitation (`pr`) from EnviDat/EnviCloud and visualise them as
-interactive global Plotly maps with a per-month slider.
+and precipitation (`pr`) from EnviDat/EnviCloud and explore them in a
+full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
 
 ## Layout
 
 - `scripts/download_data.py` — streams monthly GeoTIFFs into `data/` (gitignored).
-- `scripts/visualise.py` — decimated-average read → CHELSA scaling → writes a single
-  full-screen `output/climatology.html` (Plotly.js heatmap + JS) plus per-month JSON
-  frames in `output/frames/` fetched on demand. Variable toggle (tas/pr), month slider +
-  play, north-up, and a colour bar that rescales to the zoomed region (un-zoomed: 2–98 pct).
-  Default grid ~0.25° (`--width`). All `output/` is gitignored. Must be served over HTTP
-  (file:// blocked); see README.
+- `scripts/serve.py` — the viewer. A stdlib `ThreadingHTTPServer`: `GET /` serves a
+  full-page `<canvas>` page; `GET /render?var&month&west&east&south&north&w&h` does a
+  windowed/decimated rasterio read of the visible bbox (using the GeoTIFFs' internal
+  overviews), applies CHELSA scaling + a numpy colour-map LUT, and returns raw RGBA bytes
+  (vmin/vmax in headers). Wrap on both axes = tiling the read over world copies; colour
+  range = 2–98 pct of the region in view. Front-end: right-drag pan, wheel zoom, var
+  toggle, month slider+play, colour bar. No build step / no `output/`.
+- `Makefile` — `make serve` (PORT=…) runs the viewer; `make download` fetches data.
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`
   (needs the `nodejs_23` from `shell.nix`). Profile/cache live in `.cache/` (gitignored).
@@ -31,9 +33,12 @@ interactive global Plotly maps with a per-month slider.
 ## Commands
 
 ```sh
-uv run scripts/download_data.py     # ~6 GB
-uv run scripts/visualise.py         # → output/*.html
+make download                       # ~6 GB into data/
+make serve                          # viewer at http://localhost:8765
 ```
+
+Note: `plotly` is still a declared dep but is no longer used by the viewer
+(which renders via canvas); safe to drop from `pyproject.toml` if desired.
 
 ## Conventions
 
