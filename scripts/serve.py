@@ -576,17 +576,14 @@ async function fetchValue() {
   if (!hoverLL) return;
   const { lon, lat } = hoverLL;
   const lonD = ((lon + 180) % 360 + 360) % 360 - 180;   // wrap to [-180,180)
-  const coord = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ` +
-                `${Math.abs(lonD).toFixed(1)}°${lonD >= 0 ? 'E' : 'W'}`;
   if (valAbort) valAbort.abort();
   valAbort = new AbortController();
   try {
     const r = await fetch(`/value?var=${curVar}&month=${curMonth}&lon=${lonD}&lat=${lat}`,
                           { signal: valAbort.signal });
     const d = await r.json();
-    const txt = d.value == null ? '—'
+    tip.textContent = d.value == null ? '—'
       : `${curVar === 'pr' ? d.value.toFixed(0) : d.value.toFixed(1)} ${d.unit}`;
-    tip.textContent = `${txt}  ·  ${coord}`;
     tip.style.display = 'block';
   } catch (err) { /* aborted / network — ignore */ }
 }
