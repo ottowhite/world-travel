@@ -71,6 +71,6 @@ Note: `plotly` is still a declared dep but is no longer used by the viewer
 
 ## Conventions
 
-- Atomic git commits with standard tags; push after each commit (note: no git
-  remote configured yet, so pushes are local-only until one is added).
+- Atomic git commits with standard tags; push after each commit to `origin`
+  (`git@github.com:ottowhite/world-travel.git`).
 - Keep this file up to date as the project changes.
