@@ -35,9 +35,9 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
   1:50m coastline (overlay) and land polygons (ocean mask), EPSG:4326, ~1.6 MB each,
   committed (NOT gitignored) so the viewer works offline/reproducibly.
 - `Makefile` — `make serve` (PORT=…) runs the viewer; `make download` fetches data.
-- `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
+- `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_22), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`
-  (needs the `nodejs_23` from `shell.nix`). Profile/cache live in `.cache/` (gitignored).
+  (needs the `nodejs_22` from `shell.nix`). Profile/cache live in `.cache/` (gitignored).
 - `pyproject.toml` / `uv.lock` — deps: rasterio, numpy, plotly. Python 3.13 via uv.
 
 ## Data details (CHELSA V2.1)
