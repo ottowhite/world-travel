@@ -62,9 +62,14 @@ VARIABLES = {
     "pr": {
         "label": "Precipitation", "unit": "mm / month",
         "convert": lambda mm: mm,
-        "vmin": 0.0, "vmax": 800.0,       # fixed absolute display range (mm/month)
-        "stops": [(0.0, (255, 255, 217)), (0.5, (65, 182, 196)),
-                  (1.0, (8, 29, 88))],    # dry pale -> wet navy
+        # Precip is strongly right-skewed (deserts ~0, monsoons >1000 mm/month),
+        # so a LINEAR map paints most land pale. Use a LOG10 colour scale over a
+        # fixed range [vmin, vmax] mm/month — values clamp to vmin (palest) below.
+        "vmin": 1.0, "vmax": 2000.0,      # fixed absolute display range (mm/month)
+        "log": True,
+        # devon_r: perceptually-uniform sequential map (Fabio Crameri), reversed so
+        # dry = pale, wet = deep saturated blue (ends deep blue, not pure black).
+        "cmap": "devon_r",
     },
 }
 
@@ -156,7 +161,13 @@ def render(var, month, west, east, south, north, w, h):
     lut = _lut(var)
     mask = np.isfinite(out)
     idx = np.zeros((h, w), np.uint8)
-    norm = np.clip((out[mask] - vmin) / (vmax - vmin), 0, 1)
+    vals = out[mask]
+    if cfg.get("log"):
+        # Normalise in log10 space: clamp to [vmin, vmax], then map to 0..1.
+        vc = np.clip(vals, vmin, vmax)
+        norm = (np.log10(vc) - math.log10(vmin)) / (math.log10(vmax) - math.log10(vmin))
+    else:
+        norm = np.clip((vals - vmin) / (vmax - vmin), 0, 1)
     idx[mask] = (norm * 255).astype(np.uint8)
     rgba = np.empty((h, w, 4), np.uint8)
     rgba[..., :3] = lut[idx]
@@ -213,6 +224,7 @@ def _config_json():
         "order": list(VARIABLES),
         "vars": {k: {"label": v["label"], "unit": v["unit"],
                      "vmin": v["vmin"], "vmax": v["vmax"],
+                     "log": bool(v.get("log")),
                      "stops": _client_stops(k)} for k, v in VARIABLES.items()},
         "bounds": _bounds(),  # left, bottom, right, top
     })
@@ -344,11 +356,15 @@ function updateColorbar() {
     c.fillStyle = lerpColor(stops, t); c.fillRect(0, i, 22, 1);
   }
   // Fixed absolute range from the baked-in config — never rescales on pan/zoom.
-  const vmin = CFG.vars[curVar].vmin, vmax = CFG.vars[curVar].vmax;
-  const u = CFG.vars[curVar].unit;
+  const cfg = CFG.vars[curVar];
+  const vmin = cfg.vmin, vmax = cfg.vmax, u = cfg.unit;
+  // Midpoint label matches the gradient midpoint: geometric mean for a log scale,
+  // arithmetic mean for a linear scale.
+  const vmid = cfg.log ? Math.pow(10, (Math.log10(vmin) + Math.log10(vmax)) / 2)
+                       : (vmin + vmax) / 2;
   document.getElementById('vmax').textContent = fmt(vmax) + ' ' + u;
-  document.getElementById('vmid').textContent = fmt((vmin + vmax) / 2);
-  document.getElementById('vmin').textContent = fmt(vmin);
+  document.getElementById('vmid').textContent = fmt(vmid) + ' ' + u;
+  document.getElementById('vmin').textContent = fmt(vmin) + ' ' + u;
 }
 function fmt(x) { return Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(1); }
 function lerpColor(stops, t) {

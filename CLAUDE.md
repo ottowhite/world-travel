@@ -30,10 +30,16 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
 - Coverage: lon −180..180, lat −90..84 (EPSG:4326).
 - `tas`: °C = DN·0.1 − 273.15.  `pr`: mm/month = DN·0.1.
 - `tas` colour map: the perceptually-uniform diverging "vik" (Fabio Crameri, via
-  `cmcrameri`), with the fixed symmetric range −40..40 °C so vik's neutral midpoint
-  lands exactly at 0 °C (cold blue → hot red). `pr` still uses anchor RGB stops.
+  `cmcrameri`), with the fixed symmetric LINEAR range −40..40 °C so vik's neutral
+  midpoint lands exactly at 0 °C (cold blue → hot red).
+- `pr` colour map: the perceptually-uniform sequential "devon_r" (`cmcrameri`),
+  on a LOG10 range 1..2000 mm/month (dry pale → wet deep blue). Precip is strongly
+  right-skewed, so log normalisation reveals mid-range continental gradation that a
+  linear map flattens. The client colour bar mid label is the geometric mean
+  (√(1·2000) ≈ 45 mm), not the arithmetic mean.
   In `serve.py`, a variable specifies either `"cmap"` (named scientific colormap,
-  sampled into the LUT and into ~33 client colour-bar stops) or `"stops"`.
+  sampled into the LUT and into ~33 client colour-bar stops) or `"stops"`; an
+  optional `"log": True` switches `render()` and the colour-bar labels to log space.
 - URL pattern:
   `https://os.unil.cloud.switch.ch/chelsa02/chelsa/global/climatologies/{var}/1981-2010/CHELSA_{var}_{MM}_1981-2010_V.2.1.tif`
 
