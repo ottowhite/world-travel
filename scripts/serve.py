@@ -382,11 +382,10 @@ PAGE = r"""<!doctype html>
                      font-size: 10px; color: #aab4c0; cursor: pointer; }
   #monthTicks span.active { color: #fff; font-weight: 700; }
   #title { position: fixed; top: 10px; right: 14px; color: #ddd; z-index: 10;
-           font-size: 14px; text-shadow: 0 1px 2px #000;
-           display: flex; align-items: center; gap: 8px; }
-  #repo { color: #ddd; opacity: .7; display: inline-flex;
-          transition: opacity .12s, color .12s; }
-  #repo:hover { opacity: 1; color: #fff; }
+           font-size: 14px; text-shadow: 0 1px 2px #000; }
+  #repo { color: #eee; display: inline-flex; opacity: .8;
+          transition: opacity .12s; }
+  #repo:hover { opacity: 1; }
   #repo svg { display: block; }
   #cbar { position: fixed; right: 16px; bottom: 18px; width: 22px; height: 200px;
           border: 1px solid #0008; border-radius: 4px; z-index: 10; }
@@ -415,13 +414,14 @@ PAGE = r"""<!doctype html>
   <div class="g">
     <label><input id="coastToggle" type="checkbox" checked/> Coastlines</label>
   </div>
+  <div class="g"><a id="repo"
+     href="https://github.com/ottowhite/world-travel" target="_blank" rel="noopener"
+     aria-label="View source on GitHub" title="View source on GitHub">
+    <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true"><path fill="currentColor"
+      d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.08.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+  </a></div>
 </div>
-<div id="title"><span id="titleText"></span><a id="repo"
-   href="https://github.com/ottowhite/world-travel" target="_blank" rel="noopener"
-   aria-label="View source on GitHub" title="View source on GitHub">
-  <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor"
-    d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.08.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.5 7.5 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
-</a></div>
+<div id="title"></div>
 <div id="cbarWrap"><span id="vmax">–</span><span id="vmid"></span><span id="vmin">–</span></div>
 <canvas id="cbar"></canvas>
 <div id="hint">drag to pan · scroll to zoom · hover to read values · wraps around</div>
@@ -720,7 +720,7 @@ const coastToggle = document.getElementById('coastToggle');
 coastToggle.addEventListener('change', e => { showCoast = e.target.checked; refresh(); });
 
 function setTitle() {
-  document.getElementById('titleText').textContent =
+  document.getElementById('title').textContent =
     CFG.vars[curVar].label + ' — CHELSA ' + '1981-2010' + ' climatology';
 }
 
