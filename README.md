@@ -34,7 +34,8 @@ make serve        # starts the viewer -> http://localhost:8765
 - toggle between **Temperature** and **Precipitation**,
 - step through the 12 months with the **slider** or the **play** button,
 - **right-drag** to pan, **scroll** to zoom — the map wraps around on both
-  axes and the colour bar rescales to the region in view.
+  axes. The colour bar uses a **fixed absolute range** per variable
+  (`tas` −40..40 °C, `pr` 0..800 mm/month), so it never changes on pan/zoom.
 
 ## How it works
 
@@ -46,5 +47,6 @@ make serve        # starts the viewer -> http://localhost:8765
   region straight from the GeoTIFFs (which carry internal overviews, so reads are
   fast at any zoom), applies the CHELSA V2.1 scaling (`tas` → °C, `pr` → mm/month)
   and a colour map, and returns raw RGBA bytes. Wrap-around is handled by tiling
-  the read across world copies; the colour range is the 2–98th percentile of the
-  region currently in view.
+  the read across world copies; values are normalised against a fixed per-variable
+  colour range (baked into the page config), so the same colour always means the
+  same physical value regardless of zoom.

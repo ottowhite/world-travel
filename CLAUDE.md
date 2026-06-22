@@ -12,10 +12,12 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
 - `scripts/serve.py` — the viewer. A stdlib `ThreadingHTTPServer`: `GET /` serves a
   full-page `<canvas>` page; `GET /render?var&month&west&east&south&north&w&h` does a
   windowed/decimated rasterio read of the visible bbox (using the GeoTIFFs' internal
-  overviews), applies CHELSA scaling + a numpy colour-map LUT, and returns raw RGBA bytes
-  (vmin/vmax in headers). Wrap on both axes = tiling the read over world copies; colour
-  range = 2–98 pct of the region in view. Front-end: right-drag pan, wheel zoom, var
-  toggle, month slider+play, colour bar. No build step / no `output/`.
+  overviews), applies CHELSA scaling + a numpy colour-map LUT, and returns raw RGBA bytes.
+  Wrap on both axes = tiling the read over world copies; the colour range is a FIXED
+  absolute per-variable range (`tas` −40..40 °C, `pr` 0..800 mm/month) set in each
+  `VARIABLES` entry's `vmin`/`vmax` and exposed via the page config, so the colour bar
+  is static for a variable and never rescales on pan/zoom. Front-end: right-drag pan,
+  wheel zoom, var toggle, month slider+play, colour bar. No build step / no `output/`.
 - `Makefile` — `make serve` (PORT=…) runs the viewer; `make download` fetches data.
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`

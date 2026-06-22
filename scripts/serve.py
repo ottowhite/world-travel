@@ -14,8 +14,9 @@ Run:
 Endpoints:
     GET /                           the viewer page
     GET /render?var=&month=&west=&east=&south=&north=&w=&h=
-                                    raw RGBA bytes (w*h*4); X-Vmin/X-Vmax/X-Width
-                                    /X-Height headers carry the colour range used
+                                    raw RGBA bytes (w*h*4) normalised against the
+                                    variable's fixed colour range; X-Width/X-Height
+                                    headers carry the image dimensions
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ VARIABLES = {
     "tas": {
         "label": "Temperature", "unit": "°C",
         "convert": lambda k: k - 273.15,  # Kelvin (DN*0.1) -> °C
+        "vmin": -40.0, "vmax": 40.0,      # fixed absolute display range (°C)
         "stops": [(0.0, (5, 48, 97)), (0.25, (67, 147, 195)),
                   (0.5, (247, 247, 247)), (0.75, (214, 96, 77)),
                   (1.0, (103, 0, 31))],   # cold blue -> hot red
@@ -56,6 +58,7 @@ VARIABLES = {
     "pr": {
         "label": "Precipitation", "unit": "mm / month",
         "convert": lambda mm: mm,
+        "vmin": 0.0, "vmax": 800.0,       # fixed absolute display range (mm/month)
         "stops": [(0.0, (255, 255, 217)), (0.5, (65, 182, 196)),
                   (1.0, (8, 29, 88))],    # dry pale -> wet navy
     },
@@ -124,13 +127,9 @@ def render(var, month, west, east, south, north, w, h):
                 patch = cfg["convert"](np.ma.filled(arr, np.nan) * SCALE)
                 out[ry0:ry1, cx0:cx1] = patch
 
-    finite = out[np.isfinite(out)]
-    if finite.size:
-        vmin, vmax = (float(v) for v in np.percentile(finite, [2, 98]))
-    else:
-        vmin, vmax = 0.0, 1.0
-    if vmax <= vmin:
-        vmax = vmin + 1.0
+    # Fixed absolute colour range from the variable's config — independent of the
+    # region in view, so the same colour always means the same physical value.
+    vmin, vmax = cfg["vmin"], cfg["vmax"]
 
     lut = _lut(var)
     mask = np.isfinite(out)
@@ -140,7 +139,7 @@ def render(var, month, west, east, south, north, w, h):
     rgba = np.empty((h, w, 4), np.uint8)
     rgba[..., :3] = lut[idx]
     rgba[..., 3] = np.where(mask, 255, 0)
-    return rgba, vmin, vmax
+    return rgba
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -175,15 +174,13 @@ class Handler(BaseHTTPRequestHandler):
         except (KeyError, ValueError, AssertionError):
             return self.send_error(400)
 
-        rgba, vmin, vmax = render(var, month, west, east, south, north, w, h)
+        rgba = render(var, month, west, east, south, north, w, h)
         body = rgba.tobytes()
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Width", str(w))
         self.send_header("X-Height", str(h))
-        self.send_header("X-Vmin", f"{vmin:.4g}")
-        self.send_header("X-Vmax", f"{vmax:.4g}")
         self.end_headers()
         self.wfile.write(body)
 
@@ -193,6 +190,7 @@ def _config_json():
         "months": MONTHS,
         "order": list(VARIABLES),
         "vars": {k: {"label": v["label"], "unit": v["unit"],
+                     "vmin": v["vmin"], "vmax": v["vmax"],
                      "stops": v["stops"]} for k, v in VARIABLES.items()},
         "bounds": _bounds(),  # left, bottom, right, top
     })
@@ -305,18 +303,17 @@ async function refresh() {
   try {
     const r = await fetch(url, { signal: pending.signal });
     const W = +r.headers.get('X-Width'), H = +r.headers.get('X-Height');
-    const vmin = +r.headers.get('X-Vmin'), vmax = +r.headers.get('X-Vmax');
     const buf = new Uint8ClampedArray(await r.arrayBuffer());
     const img = new ImageData(buf, W, H);
     const bitmap = await createImageBitmap(img);
     last = { bitmap, west: v.west, east: v.east, south: v.south, north: v.north };
     draw();
-    updateColorbar(vmin, vmax);
+    updateColorbar();
   } catch (e) { if (e.name !== 'AbortError') console.error(e); }
 }
 
 // ── colour bar ────────────────────────────────────────────────────────────
-function updateColorbar(vmin, vmax) {
+function updateColorbar() {
   const cb = document.getElementById('cbar'), n = 200;
   cb.width = 22; cb.height = n;
   const c = cb.getContext('2d'), stops = CFG.vars[curVar].stops;
@@ -324,6 +321,8 @@ function updateColorbar(vmin, vmax) {
     const t = 1 - i / (n - 1);                      // top = high value
     c.fillStyle = lerpColor(stops, t); c.fillRect(0, i, 22, 1);
   }
+  // Fixed absolute range from the baked-in config — never rescales on pan/zoom.
+  const vmin = CFG.vars[curVar].vmin, vmax = CFG.vars[curVar].vmax;
   const u = CFG.vars[curVar].unit;
   document.getElementById('vmax').textContent = fmt(vmax) + ' ' + u;
   document.getElementById('vmid').textContent = fmt((vmin + vmax) / 2);
