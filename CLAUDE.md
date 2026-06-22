@@ -18,6 +18,13 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
   `VARIABLES` entry's `vmin`/`vmax` and exposed via the page config, so the colour bar
   is static for a variable and never rescales on pan/zoom. Front-end: right-drag pan,
   wheel zoom, var toggle, month slider+play, colour bar. No build step / no `output/`.
+  `GET /coastline.geojson` serves the bundled coastline (read once, cached). The
+  front-end fetches it once, flattens LineString/MultiLineString to lon/lat
+  polylines, and in `draw()` strokes them over the raster (dark halo + light line
+  so they stay legible over both colour maps) replicated across the SAME ±MAXK wrap
+  copies the raster uses. A default-on "Coastlines" checkbox in the bar toggles it.
+- `assets/ne_50m_coastline.geojson` — Natural Earth 1:50m coastline (EPSG:4326,
+  ~1.6 MB), committed (NOT gitignored) so the overlay works offline/reproducibly.
 - `Makefile` — `make serve` (PORT=…) runs the viewer; `make download` fetches data.
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`

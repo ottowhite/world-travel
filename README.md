@@ -36,6 +36,9 @@ make serve        # starts the viewer -> http://localhost:8765
 - **right-drag** to pan, **scroll** to zoom — the map wraps around on both
   axes. The colour bar uses a **fixed absolute range** per variable
   (`tas` −40..40 °C, `pr` 0..800 mm/month), so it never changes on pan/zoom.
+- toggle the **Coastlines** overlay (Natural Earth 1:50m, bundled in `assets/`)
+  for geographic orientation when zoomed in — on by default, aligned with the
+  map's land/sea boundaries and replicated across the wrap copies.
 
 ## How it works
 
@@ -50,3 +53,7 @@ make serve        # starts the viewer -> http://localhost:8765
   the read across world copies; values are normalised against a fixed per-variable
   colour range (baked into the page config), so the same colour always means the
   same physical value regardless of zoom.
+- A bundled Natural Earth 1:50m coastline GeoJSON (`assets/ne_50m_coastline.geojson`,
+  served at `GET /coastline.geojson`) is fetched once, flattened to lon/lat
+  polylines, and drawn over the raster — with a dark halo plus a light line so it
+  stays legible over both colour maps — replicated across the same wrap copies.

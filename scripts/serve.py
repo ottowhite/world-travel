@@ -37,6 +37,8 @@ from rasterio.windows import from_bounds
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
+ASSETS_DIR = ROOT / "assets"
+COASTLINE_PATH = ASSETS_DIR / "ne_50m_coastline.geojson"
 PERIOD = "1981-2010"
 VERSION = "V.2.1"
 SCALE = 0.1  # CHELSA V2.1 DN -> physical, before any offset
@@ -105,6 +107,12 @@ def _client_stops(var: str):
     rgba = cmap(pos)
     return [[round(float(p), 4), [int(round(c * 255)) for c in rgba[i, :3]]]
             for i, p in enumerate(pos)]
+
+
+@lru_cache(maxsize=1)
+def _coastline_bytes() -> bytes:
+    """Read the bundled Natural Earth coastline GeoJSON once and cache it."""
+    return COASTLINE_PATH.read_bytes()
 
 
 @lru_cache(maxsize=1)
@@ -185,7 +193,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_html()
         if url.path == "/render":
             return self._send_render(parse_qs(url.query))
+        if url.path == "/coastline.geojson":
+            return self._send_coastline()
         self.send_error(404)
+
+    def _send_coastline(self):
+        try:
+            body = _coastline_bytes()
+        except OSError:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_html(self):
         body = PAGE.encode("utf-8")
@@ -272,6 +293,9 @@ PAGE = r"""<!doctype html>
     <input id="month" type="range" min="0" max="11" step="1" value="0"/>
     <span id="monthLabel">Jan</span>
   </div>
+  <div class="g">
+    <label><input id="coastToggle" type="checkbox" checked/> Coastlines</label>
+  </div>
 </div>
 <div id="title"></div>
 <div id="cbarWrap"><span id="vmax">–</span><span id="vmid"></span><span id="vmin">–</span></div>
@@ -288,6 +312,25 @@ let curVar = CFG.order[0], curMonth = 0;
 const view = { cx: 0, cy: (T + B) / 2, dpp: 1 };   // centre lon/lat, deg per backing-px
 let last = null;                                    // {bitmap, west, east, south, north}
 let pending = null, refreshTimer = null, playTimer = null;
+let coastlines = null;                              // [[ [lon,lat], ... ], ...]
+let showCoast = true;
+
+// Fetch + flatten the bundled Natural Earth coastline once. LineString and
+// MultiLineString geometries both collapse to a flat list of [lon,lat] polylines.
+async function loadCoastlines() {
+  try {
+    const r = await fetch('/coastline.geojson');
+    const gj = await r.json();
+    const out = [];
+    for (const f of gj.features) {
+      const g = f.geometry; if (!g) continue;
+      if (g.type === 'LineString') out.push(g.coordinates);
+      else if (g.type === 'MultiLineString') for (const c of g.coordinates) out.push(c);
+    }
+    coastlines = out;
+    draw();
+  } catch (e) { console.error('coastline load failed', e); }
+}
 
 function sizeCanvas() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -319,8 +362,35 @@ function draw() {
       ctx.drawImage(last.bitmap, dx, dy, dw, dh);
     }
   }
+  if (showCoast && coastlines) drawCoastlines(v, dppx, dppy);
 }
 const MAXK = 4;
+
+function drawCoastlines(v, dppx, dppy) {
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  // Draw each path twice across the same wrap copies the raster uses: a wider
+  // dark halo then a thin light line, so it reads over both vik (blue/red) and
+  // devon_r (pale->deep-blue) backgrounds.
+  for (let kx = -MAXK; kx <= MAXK; kx++) {
+    // Skip whole copies that fall outside the view in longitude.
+    const offx = kx * WORLD_W;
+    if (L + offx > v.east || R + offx < v.west) continue;
+    for (let ky = -MAXK; ky <= MAXK; ky++) {
+      const offy = ky * WORLD_H;
+      if (B + offy > v.north || T + offy < v.south) continue;
+      ctx.beginPath();
+      for (const line of coastlines) {
+        for (let i = 0; i < line.length; i++) {
+          const x = (line[i][0] + offx - v.west) / dppx;
+          const y = (v.north - (line[i][1] + offy)) / dppy;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 2.4; ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineWidth = 1; ctx.stroke();
+    }
+  }
+}
 
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
@@ -442,6 +512,9 @@ CFG.order.forEach(k => {
   };
   varsBox.appendChild(b);
 });
+const coastToggle = document.getElementById('coastToggle');
+coastToggle.addEventListener('change', e => { showCoast = e.target.checked; draw(); });
+
 function setTitle() {
   document.getElementById('title').textContent =
     CFG.vars[curVar].label + ' — CHELSA ' + '1981-2010' + ' climatology';
@@ -455,9 +528,9 @@ function resetView() {
 window.addEventListener('resize', () => { sizeCanvas(); draw(); scheduleRefresh(); });
 
 // expose a little state for debugging / automated checks
-window.__viewer = { view, bbox, setMonth, get curVar() { return curVar; } };
+window.__viewer = { view, bbox, setMonth, draw, get curVar() { return curVar; } };
 
-resetView(); setTitle(); refresh();
+resetView(); setTitle(); refresh(); loadCoastlines();
 </script>
 </body>
 </html>
