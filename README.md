@@ -1,6 +1,6 @@
-<https://worldmap.oversight.fyi/>
+# [View Climate Map](https://worldmap.oversight.fyi/)
 
-# CHELSA climatology viewer
+## CHELSA climatology viewer
 
 Download and explore the [CHELSA](https://chelsa-climate.org/) V2.1 monthly
 climatologies (1981–2010) of **temperature** and **precipitation** in a
