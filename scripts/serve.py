@@ -375,7 +375,8 @@ PAGE = r"""<!doctype html>
   #bar button { padding: 4px 11px; border: 1px solid #4a5568; border-radius: 6px;
                 background: #2d3748; color: #eee; cursor: pointer; font-size: 14px; }
   #bar button.active { background: #3182ce; border-color: #3182ce; }
-  #monthBox { display: flex; flex-direction: column; gap: 1px; }
+  #monthBox { display: flex; flex-direction: column; gap: 1px;
+              padding: 0 14px; }   /* room for Jan/Dec tick labels that overhang */
   #month { width: 432px; margin: 0; }
   #monthTicks { position: relative; width: 432px; height: 13px; }
   #monthTicks span { position: absolute; transform: translateX(-50%);
