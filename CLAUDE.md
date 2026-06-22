@@ -12,7 +12,13 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
 - `scripts/serve.py` — the viewer. A stdlib `ThreadingHTTPServer`: `GET /` serves a
   full-page `<canvas>` page; `GET /render?var&month&west&east&south&north&w&h` does a
   windowed/decimated rasterio read of the visible bbox (using the GeoTIFFs' internal
-  overviews), applies CHELSA scaling + a numpy colour-map LUT, and returns raw RGBA bytes.
+  overviews), applies CHELSA scaling, and returns an 8-bit **palette PNG** (Pillow,
+  `mode="P"`, `compress_level=9`). The palette is laid out as `0` = nodata (made
+  transparent via tRNS), `1..PAL_DATA_LEVELS` = data colours subsampled from the
+  256-entry LUT, `255` = ocean. `PAL_DATA_LEVELS = 64` is the wire-size sweet spot:
+  1.25 °C per band for `tas`, ~12 per decade for `pr` (log) — visually indistinguishable
+  from the full LUT, but deflate sees ~4× fewer distinct bytes and a full-screen tile
+  lands around 400 KB (vs ~19 MB raw RGBA).
   Wrap on both axes = tiling the read over world copies; the colour range is a FIXED
   absolute per-variable range set in each `VARIABLES` entry and exposed via the page
   config, so the colour bar is static for a variable and never rescales on pan/zoom.
@@ -38,7 +44,7 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_22), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`
   (needs the `nodejs_22` from `shell.nix`). Profile/cache live in `.cache/` (gitignored).
-- `pyproject.toml` / `uv.lock` — deps: rasterio, numpy, plotly. Python 3.13 via uv.
+- `pyproject.toml` / `uv.lock` — deps: rasterio, numpy, pillow, plotly. Python 3.13 via uv.
 
 ## Data details (CHELSA V2.1)
 
