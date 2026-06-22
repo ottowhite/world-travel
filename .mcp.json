@@ -3,7 +3,7 @@
     "playwright": {
       "type": "stdio",
       "command": "nix-shell",
-      "args": ["--run", "npx -y @playwright/mcp --user-data-dir .cache/playwright-mcp-profile"]
+      "args": ["--run", "npx -y @playwright/mcp --browser chromium --user-data-dir .cache/playwright-mcp-profile"]
     }
   }
 }
