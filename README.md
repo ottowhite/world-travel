@@ -34,7 +34,8 @@ make serve        # starts the viewer -> http://localhost:8765
 - toggle between **Temperature** and **Precipitation**,
 - step through the 12 months with the **slider** (a labelled notch per month) or
   the **play** button,
-- **right-drag** to pan, **scroll** to zoom — the map wraps around on both axes.
+- **drag** to pan, **scroll** to zoom, **hover** to read the value at a point —
+  the map wraps around on both axes.
   The colour bar uses a **fixed absolute range** per variable, so it never
   changes on pan/zoom: temperature is a full **ROYGBIV** ramp over −40..40 °C
   (violet = coldest, red = hottest); precipitation is a **log** scale over

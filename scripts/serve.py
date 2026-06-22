@@ -36,7 +36,7 @@ import rasterio
 from cmcrameri import cm as cmc
 from rasterio.features import rasterize
 from rasterio.transform import from_bounds as transform_from_bounds
-from rasterio.windows import from_bounds
+from rasterio.windows import Window, from_bounds
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
@@ -220,6 +220,23 @@ def render(var, month, west, east, south, north, w, h, mask=False):
     return rgba
 
 
+def value_at(var, month, lon, lat):
+    """Physical value at a single lon/lat (wraps in longitude), or None if no data."""
+    cfg = VARIABLES[var]
+    left, bottom, right, top = _bounds()
+    lon = ((lon - left) % (right - left)) + left   # wrap into [left, right)
+    if not (bottom <= lat <= top):
+        return None
+    with rasterio.open(tif_path(var, month + 1)) as ds:
+        row, col = ds.index(lon, lat)
+        if not (0 <= row < ds.height and 0 <= col < ds.width):
+            return None
+        v = ds.read(1, window=Window(col, row, 1, 1), masked=True)
+    if v.size == 0 or np.ma.is_masked(v) and v.mask.all():
+        return None
+    return float(cfg["convert"](float(v[0, 0]) * SCALE))
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):  # keep the console quiet
         pass
@@ -230,9 +247,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_html()
         if url.path == "/render":
             return self._send_render(parse_qs(url.query))
+        if url.path == "/value":
+            return self._send_value(parse_qs(url.query))
         if url.path == "/coastline.geojson":
             return self._send_coastline()
         self.send_error(404)
+
+    def _send_value(self, q):
+        try:
+            var = q["var"][0]
+            month = int(q["month"][0])
+            lon, lat = float(q["lon"][0]), float(q["lat"][0])
+            assert var in VARIABLES and 0 <= month < 12
+        except (KeyError, ValueError, AssertionError):
+            return self.send_error(400)
+        val = value_at(var, month, lon, lat)
+        body = json.dumps({"value": val, "unit": VARIABLES[var]["unit"]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_coastline(self):
         try:
@@ -324,6 +359,9 @@ PAGE = r"""<!doctype html>
               color: #eee; font-size: 12px; text-shadow: 0 1px 2px #000; text-align: right; }
   #hint { position: fixed; left: 12px; bottom: 12px; color: #9aa5b1; font-size: 12px;
           z-index: 10; }
+  #tip { position: fixed; pointer-events: none; z-index: 20; padding: 3px 7px;
+         border-radius: 5px; background: rgba(20,24,32,.9); color: #fff;
+         font-size: 12px; white-space: nowrap; display: none; }
 </style>
 </head>
 <body>
@@ -345,7 +383,8 @@ PAGE = r"""<!doctype html>
 <div id="title"></div>
 <div id="cbarWrap"><span id="vmax">–</span><span id="vmid"></span><span id="vmin">–</span></div>
 <canvas id="cbar"></canvas>
-<div id="hint">right-drag to pan · scroll to zoom · wraps around</div>
+<div id="hint">drag to pan · scroll to zoom · hover to read values · wraps around</div>
+<div id="tip"></div>
 <script>
 const CFG = __CONFIG__;
 const [L, B, R, T] = CFG.bounds;        // source extent (deg)
@@ -495,25 +534,66 @@ function lerpColor(stops, t) {
   const c = stops[stops.length - 1][1]; return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-// ── interaction: right-drag pan, wheel zoom ────────────────────────────────
+// ── interaction: left-drag pan, wheel zoom, hover read-out ──────────────────
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 let drag = null;
 canvas.addEventListener('pointerdown', e => {
-  if (e.button !== 2) return;                       // right button only
+  if (e.button !== 0) return;                       // left button pans
   drag = { x: e.clientX, y: e.clientY };
+  hideTip();
   canvas.classList.add('panning'); canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', e => {
-  if (!drag) return;
-  const dpr = canvas.width / canvas.clientWidth;
-  view.cx -= (e.clientX - drag.x) * dpr * view.dpp;
-  view.cy += (e.clientY - drag.y) * dpr * view.dpp;
-  drag = { x: e.clientX, y: e.clientY };
-  draw(); scheduleRefresh();
+  if (drag) {
+    const dpr = canvas.width / canvas.clientWidth;
+    view.cx -= (e.clientX - drag.x) * dpr * view.dpp;
+    view.cy += (e.clientY - drag.y) * dpr * view.dpp;
+    drag = { x: e.clientX, y: e.clientY };
+    draw(); scheduleRefresh();
+  } else {
+    onHover(e);
+  }
 });
 function endDrag() { if (drag) { drag = null; canvas.classList.remove('panning'); } }
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('pointerleave', hideTip);
+
+// Hover: throttle a /value lookup at the cursor's lon/lat for the current var.
+const tip = document.getElementById('tip');
+let hoverLL = null, hoverTimer = null, valAbort = null;
+function onHover(e) {
+  const dpr = canvas.width / canvas.clientWidth;
+  const v = bbox();
+  hoverLL = { lon: v.west + e.clientX * dpr * view.dpp,
+              lat: v.north - e.clientY * dpr * view.dpp };
+  tip.style.left = (e.clientX + 14) + 'px';
+  tip.style.top = (e.clientY + 14) + 'px';
+  if (!hoverTimer) hoverTimer = setTimeout(fetchValue, 70);
+}
+async function fetchValue() {
+  hoverTimer = null;
+  if (!hoverLL) return;
+  const { lon, lat } = hoverLL;
+  const lonD = ((lon + 180) % 360 + 360) % 360 - 180;   // wrap to [-180,180)
+  const coord = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ` +
+                `${Math.abs(lonD).toFixed(1)}°${lonD >= 0 ? 'E' : 'W'}`;
+  if (valAbort) valAbort.abort();
+  valAbort = new AbortController();
+  try {
+    const r = await fetch(`/value?var=${curVar}&month=${curMonth}&lon=${lonD}&lat=${lat}`,
+                          { signal: valAbort.signal });
+    const d = await r.json();
+    const txt = d.value == null ? '—'
+      : `${curVar === 'pr' ? d.value.toFixed(0) : d.value.toFixed(1)} ${d.unit}`;
+    tip.textContent = `${txt}  ·  ${coord}`;
+    tip.style.display = 'block';
+  } catch (err) { /* aborted / network — ignore */ }
+}
+function hideTip() {
+  tip.style.display = 'none'; hoverLL = null;
+  if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+}
 
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
