@@ -17,7 +17,7 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
   absolute per-variable range set in each `VARIABLES` entry and exposed via the page
   config, so the colour bar is static for a variable and never rescales on pan/zoom.
   `tas`: ROYGBIV `stops` (violet=cold..red=hot), linear −40..40 °C. `pr`: `devon_r`
-  cmap, LOG10 over 1..2000 mm/month (`"log": True`). Front-end: right-drag pan, wheel
+  cmap, LOG10 over 1..400 mm/month (`"log": True`; saturates ≥400). Front-end: right-drag pan, wheel
   zoom, var toggle, a month slider with a labelled notch per month (datalist ticks +
   positioned `#monthTicks` labels, click a label to jump), play, colour bar. No build
   step / no `output/`.

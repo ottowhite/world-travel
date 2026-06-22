@@ -38,7 +38,7 @@ make serve        # starts the viewer -> http://localhost:8765
   The colour bar uses a **fixed absolute range** per variable, so it never
   changes on pan/zoom: temperature is a full **ROYGBIV** ramp over −40..40 °C
   (violet = coldest, red = hottest); precipitation is a **log** scale over
-  1..2000 mm/month (pale = dry, deep blue = wet).
+  1..400 mm/month (pale = dry, deep blue = wet; ≥400 mm saturates).
 - toggle the **Coastlines** overlay (Natural Earth 1:50m, bundled in `assets/`),
   on by default. While it is on, ocean (anything outside the Natural Earth land
   polygons) is painted a flat **pale blue** and only land data is shown; turn it

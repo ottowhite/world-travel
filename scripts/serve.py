@@ -77,8 +77,10 @@ VARIABLES = {
         "convert": lambda mm: mm,
         # Precip is strongly right-skewed (deserts ~0, monsoons >1000 mm/month),
         # so a LINEAR map paints most land pale. Use a LOG10 colour scale over a
-        # fixed range [vmin, vmax] mm/month — values clamp to vmin (palest) below.
-        "vmin": 1.0, "vmax": 2000.0,      # fixed absolute display range (mm/month)
+        # fixed range [vmin, vmax] mm/month — values clamp to vmin (palest) below
+        # and to vmax (deepest) above. Saturate at 400 mm (already very heavy) to
+        # spend the whole ramp on the common range and maximise visible detail.
+        "vmin": 1.0, "vmax": 400.0,       # fixed absolute display range (mm/month)
         "log": True,
         # devon_r: perceptually-uniform sequential map (Fabio Crameri), reversed so
         # dry = pale, wet = deep saturated blue (ends deep blue, not pure black).
