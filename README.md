@@ -26,19 +26,26 @@ Without direnv/nix you can just use uv directly if it is on your PATH.
 # 1. Download the data (~6 GB: 12 months × {pr, tas}) into data/ (gitignored)
 uv run scripts/download_data.py
 
-# 2. Build the interactive maps into output/
+# 2. Build the interactive map into output/
 uv run scripts/visualise.py
+
+# 3. Serve it over HTTP (file:// is blocked by most browsers)
+python3 -m http.server -d output 8765
+open http://localhost:8765/climatology.html
 ```
 
-Then open `output/tas_monthly_climatology.html` and
-`output/pr_monthly_climatology.html` in a browser. Drag the slider (or press
-play) to step through the months.
+The page is full-screen and lets you:
+
+- toggle between **Temperature** and **Precipitation**,
+- step through the 12 months with the **slider** or the **play** button,
+- **pan/zoom** — the colour bar auto-rescales to the region in view.
 
 Handy flags:
 
 ```sh
 uv run scripts/download_data.py --vars tas --months 6 7 8   # subset
-uv run scripts/visualise.py --width 480                     # coarser/smaller HTML
+uv run scripts/visualise.py --width 720                     # coarser/smaller
+uv run scripts/visualise.py --width 2880                    # finer (≈ 0.125°)
 ```
 
 ## How it works
@@ -46,6 +53,9 @@ uv run scripts/visualise.py --width 480                     # coarser/smaller HT
 - `scripts/download_data.py` streams the monthly GeoTIFFs from EnviCloud,
   skipping any already fully downloaded.
 - `scripts/visualise.py` does a decimated *average* read of each month down to a
-  small global grid (default ~0.5°), applies the CHELSA V2.1 scaling
-  (`tas` → °C, `pr` → mm/month), and builds a `plotly.express.imshow` animation
-  with a month slider.
+  global grid (default ~0.25°), applies the CHELSA V2.1 scaling (`tas` → °C,
+  `pr` → mm/month), and writes `output/climatology.html` plus per-month JSON
+  frames under `output/frames/`. The page (Plotly.js heatmap + a little JS)
+  fetches each month on demand, so the grid can be detailed without one huge
+  HTML file. The colour bar follows the zoomed region; un-zoomed it uses a
+  robust 2–98th percentile range.

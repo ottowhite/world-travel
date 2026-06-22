@@ -9,8 +9,12 @@ interactive global Plotly maps with a per-month slider.
 ## Layout
 
 - `scripts/download_data.py` — streams monthly GeoTIFFs into `data/` (gitignored).
-- `scripts/visualise.py` — decimated-average read → CHELSA scaling → `plotly.express.imshow`
-  animation; writes one HTML per variable into `output/` (gitignored).
+- `scripts/visualise.py` — decimated-average read → CHELSA scaling → writes a single
+  full-screen `output/climatology.html` (Plotly.js heatmap + JS) plus per-month JSON
+  frames in `output/frames/` fetched on demand. Variable toggle (tas/pr), month slider +
+  play, north-up, and a colour bar that rescales to the zoomed region (un-zoomed: 2–98 pct).
+  Default grid ~0.25° (`--width`). All `output/` is gitignored. Must be served over HTTP
+  (file:// blocked); see README.
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`
   (needs the `nodejs_23` from `shell.nix`). Profile/cache live in `.cache/` (gitignored).
