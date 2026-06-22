@@ -32,13 +32,17 @@ make serve        # starts the viewer -> http://localhost:8765
 (`make serve PORT=9000` to pick a port.) Then in the viewer:
 
 - toggle between **Temperature** and **Precipitation**,
-- step through the 12 months with the **slider** or the **play** button,
-- **right-drag** to pan, **scroll** to zoom — the map wraps around on both
-  axes. The colour bar uses a **fixed absolute range** per variable
-  (`tas` −40..40 °C, `pr` 0..800 mm/month), so it never changes on pan/zoom.
-- toggle the **Coastlines** overlay (Natural Earth 1:50m, bundled in `assets/`)
-  for geographic orientation when zoomed in — on by default, aligned with the
-  map's land/sea boundaries and replicated across the wrap copies.
+- step through the 12 months with the **slider** (a labelled notch per month) or
+  the **play** button,
+- **right-drag** to pan, **scroll** to zoom — the map wraps around on both axes.
+  The colour bar uses a **fixed absolute range** per variable, so it never
+  changes on pan/zoom: temperature is a full **ROYGBIV** ramp over −40..40 °C
+  (violet = coldest, red = hottest); precipitation is a **log** scale over
+  1..2000 mm/month (pale = dry, deep blue = wet).
+- toggle the **Coastlines** overlay (Natural Earth 1:50m, bundled in `assets/`),
+  on by default. While it is on, ocean (anything outside the Natural Earth land
+  polygons) is painted a flat **pale blue** and only land data is shown; turn it
+  off to see the raw global field (including over the sea).
 
 ## How it works
 

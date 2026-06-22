@@ -14,17 +14,25 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
   windowed/decimated rasterio read of the visible bbox (using the GeoTIFFs' internal
   overviews), applies CHELSA scaling + a numpy colour-map LUT, and returns raw RGBA bytes.
   Wrap on both axes = tiling the read over world copies; the colour range is a FIXED
-  absolute per-variable range (`tas` −40..40 °C, `pr` 0..800 mm/month) set in each
-  `VARIABLES` entry's `vmin`/`vmax` and exposed via the page config, so the colour bar
-  is static for a variable and never rescales on pan/zoom. Front-end: right-drag pan,
-  wheel zoom, var toggle, month slider+play, colour bar. No build step / no `output/`.
+  absolute per-variable range set in each `VARIABLES` entry and exposed via the page
+  config, so the colour bar is static for a variable and never rescales on pan/zoom.
+  `tas`: ROYGBIV `stops` (violet=cold..red=hot), linear −40..40 °C. `pr`: `devon_r`
+  cmap, LOG10 over 1..2000 mm/month (`"log": True`). Front-end: right-drag pan, wheel
+  zoom, var toggle, a month slider with a labelled notch per month (datalist ticks +
+  positioned `#monthTicks` labels, click a label to jump), play, colour bar. No build
+  step / no `output/`.
   `GET /coastline.geojson` serves the bundled coastline (read once, cached). The
   front-end fetches it once, flattens LineString/MultiLineString to lon/lat
-  polylines, and in `draw()` strokes them over the raster (dark halo + light line
-  so they stay legible over both colour maps) replicated across the SAME ±MAXK wrap
-  copies the raster uses. A default-on "Coastlines" checkbox in the bar toggles it.
-- `assets/ne_50m_coastline.geojson` — Natural Earth 1:50m coastline (EPSG:4326,
-  ~1.6 MB), committed (NOT gitignored) so the overlay works offline/reproducibly.
+  polylines, and in `draw()` strokes them over the raster (dark halo + light line)
+  replicated across the SAME ±MAXK wrap copies the raster uses. A default-on
+  "Coastlines" checkbox toggles both the overlay AND server-side OCEAN MASKING:
+  when on, `/render?mask=1` rasterizes the Natural Earth land polygons
+  (`assets/ne_50m_land.geojson`, via `rasterio.features.rasterize`) per wrap tile and
+  paints non-land pixels pale blue (`OCEAN_RGB`); off → raw global field. Toggling
+  refetches since masking is server-side.
+- `assets/ne_50m_coastline.geojson` / `assets/ne_50m_land.geojson` — Natural Earth
+  1:50m coastline (overlay) and land polygons (ocean mask), EPSG:4326, ~1.6 MB each,
+  committed (NOT gitignored) so the viewer works offline/reproducibly.
 - `Makefile` — `make serve` (PORT=…) runs the viewer; `make download` fetches data.
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`

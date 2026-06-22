@@ -13,10 +13,12 @@ Run:
 
 Endpoints:
     GET /                           the viewer page
-    GET /render?var=&month=&west=&east=&south=&north=&w=&h=
+    GET /render?var=&month=&west=&east=&south=&north=&w=&h=&mask=
                                     raw RGBA bytes (w*h*4) normalised against the
                                     variable's fixed colour range; X-Width/X-Height
-                                    headers carry the image dimensions
+                                    headers carry the image dimensions. mask=1 paints
+                                    ocean (outside Natural Earth land) pale blue.
+    GET /coastline.geojson          the bundled Natural Earth coastline overlay
 """
 
 from __future__ import annotations
@@ -32,17 +34,21 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 import rasterio
 from cmcrameri import cm as cmc
+from rasterio.features import rasterize
+from rasterio.transform import from_bounds as transform_from_bounds
 from rasterio.windows import from_bounds
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 ASSETS_DIR = ROOT / "assets"
 COASTLINE_PATH = ASSETS_DIR / "ne_50m_coastline.geojson"
+LAND_PATH = ASSETS_DIR / "ne_50m_land.geojson"
 PERIOD = "1981-2010"
 VERSION = "V.2.1"
 SCALE = 0.1  # CHELSA V2.1 DN -> physical, before any offset
 MAX_PX = 2200  # cap render size to bound work
 MAX_COPIES = 12  # cap wrap tiles per axis
+OCEAN_RGB = (198, 221, 240)  # pale blue painted over ocean when masking is on
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -56,9 +62,15 @@ VARIABLES = {
         "label": "Temperature", "unit": "°C",
         "convert": lambda k: k - 273.15,  # Kelvin (DN*0.1) -> °C
         "vmin": -40.0, "vmax": 40.0,      # fixed absolute display range (°C)
-        # vik: perceptually-uniform diverging map (Fabio Crameri). Symmetric range
-        # about 0 puts vik's neutral midpoint exactly at 0 °C (cold blue -> hot red).
-        "cmap": "vik",
+        # Full ROYGBIV spectrum: violet = coldest, red = hottest (note: a rainbow
+        # ramp is not perceptually uniform — chosen here for look, by request).
+        "stops": [(0.0, (148, 0, 211)),       # violet  (cold)
+                  (1 / 6, (75, 0, 130)),       # indigo
+                  (2 / 6, (0, 0, 255)),        # blue
+                  (3 / 6, (0, 180, 0)),        # green
+                  (4 / 6, (255, 255, 0)),      # yellow
+                  (5 / 6, (255, 127, 0)),      # orange
+                  (1.0, (255, 0, 0))],         # red     (hot)
     },
     "pr": {
         "label": "Precipitation", "unit": "mm / month",
@@ -115,6 +127,13 @@ def _coastline_bytes() -> bytes:
 
 
 @lru_cache(maxsize=1)
+def _land_geoms():
+    """Natural Earth land polygons (GeoJSON geometries) for the ocean mask."""
+    gj = json.loads(LAND_PATH.read_text())
+    return [f["geometry"] for f in gj["features"] if f.get("geometry")]
+
+
+@lru_cache(maxsize=1)
 def _bounds():
     # All variables/months share the same grid; read it once.
     with rasterio.open(tif_path("tas", 1)) as ds:
@@ -122,12 +141,17 @@ def _bounds():
     return b.left, b.bottom, b.right, b.top
 
 
-def render(var, month, west, east, south, north, w, h):
-    """Assemble the view bbox into a (h, w) float array, wrapping on both axes."""
+def render(var, month, west, east, south, north, w, h, mask=False):
+    """Assemble the view bbox into a (h, w) float array, wrapping on both axes.
+
+    When `mask` is set, pixels outside the Natural Earth land polygons are painted
+    a pale ocean blue instead of showing the (ocean-covered) source data.
+    """
     cfg = VARIABLES[var]
     left, bottom, right, top = _bounds()
     world_w, world_h = right - left, top - bottom
     out = np.full((h, w), np.nan, dtype="float32")
+    land = np.zeros((h, w), bool) if mask else None
     dppx, dppy = (east - west) / w, (north - south) / h
 
     # Integer "world copies" the view overlaps, clamped so we never tile forever.
@@ -160,25 +184,37 @@ def render(var, month, west, east, south, north, w, h):
                               boundless=True, masked=True).astype("float32")
                 patch = cfg["convert"](np.ma.filled(arr, np.nan) * SCALE)
                 out[ry0:ry1, cx0:cx1] = patch
+                if mask:
+                    tr = transform_from_bounds(
+                        ow - kx * world_w, os + ky * world_h,
+                        oe - kx * world_w, on + ky * world_h,
+                        cx1 - cx0, ry1 - ry0)
+                    lm = rasterize(_land_geoms(), out_shape=(ry1 - ry0, cx1 - cx0),
+                                   transform=tr, fill=0, default_value=1,
+                                   dtype="uint8")
+                    land[ry0:ry1, cx0:cx1] = lm.astype(bool)
 
     # Fixed absolute colour range from the variable's config — independent of the
     # region in view, so the same colour always means the same physical value.
     vmin, vmax = cfg["vmin"], cfg["vmax"]
 
     lut = _lut(var)
-    mask = np.isfinite(out)
+    finite = np.isfinite(out)
     idx = np.zeros((h, w), np.uint8)
-    vals = out[mask]
+    vals = out[finite]
     if cfg.get("log"):
         # Normalise in log10 space: clamp to [vmin, vmax], then map to 0..1.
         vc = np.clip(vals, vmin, vmax)
         norm = (np.log10(vc) - math.log10(vmin)) / (math.log10(vmax) - math.log10(vmin))
     else:
         norm = np.clip((vals - vmin) / (vmax - vmin), 0, 1)
-    idx[mask] = (norm * 255).astype(np.uint8)
+    idx[finite] = (norm * 255).astype(np.uint8)
     rgba = np.empty((h, w, 4), np.uint8)
     rgba[..., :3] = lut[idx]
-    rgba[..., 3] = np.where(mask, 255, 0)
+    rgba[..., 3] = np.where(finite, 255, 0)
+    if land is not None:
+        ocean = ~land
+        rgba[ocean] = (*OCEAN_RGB, 255)   # pale blue ocean, hides offshore data
     return rgba
 
 
@@ -223,11 +259,12 @@ class Handler(BaseHTTPRequestHandler):
             south, north = float(q["south"][0]), float(q["north"][0])
             w = min(int(q["w"][0]), MAX_PX)
             h = min(int(q["h"][0]), MAX_PX)
+            do_mask = q.get("mask", ["0"])[0] == "1"
             assert var in VARIABLES and 0 <= month < 12 and w > 0 and h > 0
         except (KeyError, ValueError, AssertionError):
             return self.send_error(400)
 
-        rgba = render(var, month, west, east, south, north, w, h)
+        rgba = render(var, month, west, east, south, north, w, h, mask=do_mask)
         body = rgba.tobytes()
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
@@ -270,8 +307,12 @@ PAGE = r"""<!doctype html>
   #bar button { padding: 4px 11px; border: 1px solid #4a5568; border-radius: 6px;
                 background: #2d3748; color: #eee; cursor: pointer; font-size: 14px; }
   #bar button.active { background: #3182ce; border-color: #3182ce; }
-  #month { width: 240px; }
-  #monthLabel { min-width: 30px; font-weight: 600; }
+  #monthBox { display: flex; flex-direction: column; gap: 1px; }
+  #month { width: 432px; margin: 0; }
+  #monthTicks { position: relative; width: 432px; height: 13px; }
+  #monthTicks span { position: absolute; transform: translateX(-50%);
+                     font-size: 10px; color: #aab4c0; cursor: pointer; }
+  #monthTicks span.active { color: #fff; font-weight: 700; }
   #title { position: fixed; top: 10px; right: 14px; color: #ddd; z-index: 10;
            font-size: 14px; text-shadow: 0 1px 2px #000; }
   #cbar { position: fixed; right: 16px; bottom: 18px; width: 22px; height: 200px;
@@ -289,8 +330,11 @@ PAGE = r"""<!doctype html>
   <div class="g" id="vars"><strong>Variable:</strong></div>
   <div class="g">
     <button id="play">▶</button>
-    <input id="month" type="range" min="0" max="11" step="1" value="0"/>
-    <span id="monthLabel">Jan</span>
+    <div id="monthBox">
+      <input id="month" type="range" min="0" max="11" step="1" value="0" list="monthticks"/>
+      <datalist id="monthticks"></datalist>
+      <div id="monthTicks"></div>
+    </div>
   </div>
   <div class="g">
     <label><input id="coastToggle" type="checkbox" checked/> Coastlines</label>
@@ -400,7 +444,8 @@ async function refresh() {
   const v = bbox();
   const w = canvas.width, h = canvas.height;
   const url = `/render?var=${curVar}&month=${curMonth}` +
-    `&west=${v.west}&east=${v.east}&south=${v.south}&north=${v.north}&w=${w}&h=${h}`;
+    `&west=${v.west}&east=${v.east}&south=${v.south}&north=${v.north}&w=${w}&h=${h}` +
+    `&mask=${showCoast ? 1 : 0}`;
   if (pending) pending.abort();
   pending = new AbortController();
   try {
@@ -483,13 +528,26 @@ canvas.addEventListener('wheel', e => {
 
 // ── controls ───────────────────────────────────────────────────────────────
 const monthSlider = document.getElementById('month');
-const monthLabel = document.getElementById('monthLabel');
+const monthTicks = document.getElementById('monthTicks');
+const monthList = document.getElementById('monthticks');
+// One labelled notch per month: a datalist option (tick mark on the range) plus
+// a positioned label centred under each notch.
+CFG.months.forEach((name, i) => {
+  const o = document.createElement('option'); o.value = i; monthList.appendChild(o);
+  const s = document.createElement('span'); s.textContent = name; s.dataset.m = i;
+  s.style.left = (i / 11 * 100) + '%';
+  s.onclick = () => setMonth(i);
+  monthTicks.appendChild(s);
+});
 function setMonth(m) {
   curMonth = ((m % 12) + 12) % 12;
-  monthSlider.value = curMonth; monthLabel.textContent = CFG.months[curMonth];
+  monthSlider.value = curMonth;
+  monthTicks.querySelectorAll('span').forEach(s =>
+    s.classList.toggle('active', +s.dataset.m === curMonth));
   refresh();
 }
 monthSlider.addEventListener('input', e => setMonth(+e.target.value));
+monthTicks.querySelector('span[data-m="0"]').classList.add('active');  // initial
 
 const playBtn = document.getElementById('play');
 playBtn.addEventListener('click', () => {
@@ -512,7 +570,8 @@ CFG.order.forEach(k => {
   varsBox.appendChild(b);
 });
 const coastToggle = document.getElementById('coastToggle');
-coastToggle.addEventListener('change', e => { showCoast = e.target.checked; draw(); });
+// Toggling coastlines also flips ocean masking, which is server-side, so refetch.
+coastToggle.addEventListener('change', e => { showCoast = e.target.checked; refresh(); });
 
 function setTitle() {
   document.getElementById('title').textContent =
