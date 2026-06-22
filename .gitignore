@@ -7,6 +7,9 @@ data/
 # generated visualisations
 output/
 
+# claude code session artifacts
+.claude/
+
 # uv / python
 .venv/
 __pycache__/
