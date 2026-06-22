@@ -9,6 +9,7 @@ pkgs.mkShell {
     pkgs.curl       # used by the data download script
     pkgs.cacert     # TLS roots for uv/curl HTTPS downloads
     pkgs.nodejs_22  # provides npx for the Playwright MCP server (see .mcp.json)
+    pkgs.expat      # runtime dep of the rasterio wheel (libexpat.so.1)
   ];
 
   # Let uv download and manage the interpreter rather than using a nix Python,
@@ -16,5 +17,6 @@ pkgs.mkShell {
   env = {
     UV_PYTHON_DOWNLOADS = "automatic";
     SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
+    LD_LIBRARY_PATH = "${pkgs.expat}/lib";
   };
 }
