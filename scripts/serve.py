@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, urlparse
 
 import numpy as np
 import rasterio
+from cmcrameri import cm as cmc
 from rasterio.windows import from_bounds
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,15 +46,18 @@ MAX_COPIES = 12  # cap wrap tiles per axis
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-# value (0..1) -> RGB anchor stops for each variable's colour map.
+# A variable's colour map is either a named scientific colormap ("cmap") sampled
+# directly into the LUT, or a list of (position, RGB) anchor "stops" interpolated
+# into the LUT. The client builds its colour-bar gradient from "stops", so cmap
+# variables also expose a sampled "stops" list (see _cmap_stops).
 VARIABLES = {
     "tas": {
         "label": "Temperature", "unit": "°C",
         "convert": lambda k: k - 273.15,  # Kelvin (DN*0.1) -> °C
         "vmin": -40.0, "vmax": 40.0,      # fixed absolute display range (°C)
-        "stops": [(0.0, (5, 48, 97)), (0.25, (67, 147, 195)),
-                  (0.5, (247, 247, 247)), (0.75, (214, 96, 77)),
-                  (1.0, (103, 0, 31))],   # cold blue -> hot red
+        # vik: perceptually-uniform diverging map (Fabio Crameri). Symmetric range
+        # about 0 puts vik's neutral midpoint exactly at 0 °C (cold blue -> hot red).
+        "cmap": "vik",
     },
     "pr": {
         "label": "Precipitation", "unit": "mm / month",
@@ -71,13 +75,31 @@ def tif_path(var: str, month: int) -> Path:
 
 @lru_cache(maxsize=None)
 def _lut(var: str) -> np.ndarray:
-    stops = VARIABLES[var]["stops"]
+    cfg = VARIABLES[var]
+    if "cmap" in cfg:
+        # Sample a named scientific colormap (e.g. vik) at 256 points -> uint8 RGB.
+        cmap = getattr(cmc, cfg["cmap"])
+        rgba = cmap(np.linspace(0, 1, 256))          # (256, 4) floats 0..1
+        return (rgba[:, :3] * 255).round().astype(np.uint8)
+    stops = cfg["stops"]
     xs = [s[0] for s in stops]
     grid = np.linspace(0, 1, 256)
     lut = np.zeros((256, 3), np.uint8)
     for ch in range(3):
         lut[:, ch] = np.interp(grid, xs, [s[1][ch] for s in stops]).astype(np.uint8)
     return lut
+
+
+def _client_stops(var: str):
+    """RGB anchor stops for the client colour-bar gradient (positions 0..1)."""
+    cfg = VARIABLES[var]
+    if "cmap" not in cfg:
+        return cfg["stops"]
+    cmap = getattr(cmc, cfg["cmap"])
+    pos = np.linspace(0, 1, 33)
+    rgba = cmap(pos)
+    return [[round(float(p), 4), [int(round(c * 255)) for c in rgba[i, :3]]]
+            for i, p in enumerate(pos)]
 
 
 @lru_cache(maxsize=1)
@@ -191,7 +213,7 @@ def _config_json():
         "order": list(VARIABLES),
         "vars": {k: {"label": v["label"], "unit": v["unit"],
                      "vmin": v["vmin"], "vmax": v["vmax"],
-                     "stops": v["stops"]} for k, v in VARIABLES.items()},
+                     "stops": _client_stops(k)} for k, v in VARIABLES.items()},
         "bounds": _bounds(),  # left, bottom, right, top
     })
 

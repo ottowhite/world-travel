@@ -29,6 +29,11 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
 - 30 arc-sec global GeoTIFFs, `uint16`, nodata `65535`, scale `0.1`.
 - Coverage: lon −180..180, lat −90..84 (EPSG:4326).
 - `tas`: °C = DN·0.1 − 273.15.  `pr`: mm/month = DN·0.1.
+- `tas` colour map: the perceptually-uniform diverging "vik" (Fabio Crameri, via
+  `cmcrameri`), with the fixed symmetric range −40..40 °C so vik's neutral midpoint
+  lands exactly at 0 °C (cold blue → hot red). `pr` still uses anchor RGB stops.
+  In `serve.py`, a variable specifies either `"cmap"` (named scientific colormap,
+  sampled into the LUT and into ~33 client colour-bar stops) or `"stops"`.
 - URL pattern:
   `https://os.unil.cloud.switch.ch/chelsa02/chelsa/global/climatologies/{var}/1981-2010/CHELSA_{var}_{MM}_1981-2010_V.2.1.tif`
 
