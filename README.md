@@ -1,5 +1,7 @@
 # CHELSA climatology viewer
 
+**Live demo:** <https://worldmap.oversight.fyi/>
+
 Download and explore the [CHELSA](https://chelsa-climate.org/) V2.1 monthly
 climatologies (1981–2010) of **temperature** and **precipitation** in a
 full-screen, slippy-map-style viewer: pan, zoom, and step through the months.
