@@ -1,0 +1,13 @@
+# direnv / nix
+.direnv/
+
+# downloaded CHELSA GeoTIFFs (~6 GB) — reproducible via scripts/download_data.py
+data/
+
+# generated visualisations
+output/
+
+# uv / python
+.venv/
+__pycache__/
+*.pyc
