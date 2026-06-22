@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "nix-shell",
+      "args": ["--run", "npx -y @playwright/mcp --user-data-dir .cache/playwright-mcp-profile"]
+    }
+  }
+}

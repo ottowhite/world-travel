@@ -10,6 +10,10 @@ output/
 # claude code session artifacts
 .claude/
 
+# playwright mcp browser profile / cache
+.cache/
+.playwright-mcp/
+
 # uv / python
 .venv/
 __pycache__/

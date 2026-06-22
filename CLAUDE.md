@@ -11,7 +11,9 @@ interactive global Plotly maps with a per-month slider.
 - `scripts/download_data.py` — streams monthly GeoTIFFs into `data/` (gitignored).
 - `scripts/visualise.py` — decimated-average read → CHELSA scaling → `plotly.express.imshow`
   animation; writes one HTML per variable into `output/` (gitignored).
-- `shell.nix` / `.envrc` — Nix dev shell (uv + curl), loaded by direnv (`use nix`).
+- `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_23), loaded by direnv (`use nix`).
+- `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`
+  (needs the `nodejs_23` from `shell.nix`). Profile/cache live in `.cache/` (gitignored).
 - `pyproject.toml` / `uv.lock` — deps: rasterio, numpy, plotly. Python 3.13 via uv.
 
 ## Data details (CHELSA V2.1)

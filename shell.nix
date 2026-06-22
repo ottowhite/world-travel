@@ -6,8 +6,9 @@
 pkgs.mkShell {
   packages = [
     pkgs.uv
-    pkgs.curl   # used by the data download script
-    pkgs.cacert # TLS roots for uv/curl HTTPS downloads
+    pkgs.curl       # used by the data download script
+    pkgs.cacert     # TLS roots for uv/curl HTTPS downloads
+    pkgs.nodejs_23  # provides npx for the Playwright MCP server (see .mcp.json)
   ];
 
   # Let uv download and manage the interpreter rather than using a nix Python,
