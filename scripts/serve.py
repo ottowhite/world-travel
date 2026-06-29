@@ -89,10 +89,28 @@ VARIABLES = {
         # dry = pale, wet = deep saturated blue (ends deep blue, not pure black).
         "cmap": "devon_r",
     },
+    "orog": {
+        "label": "Altitude", "unit": "m",
+        # Static layer: CHELSA's input DEM (one file, not per-month). It stores
+        # elevation in metres directly, so no DN scaling and an identity convert.
+        "static": True, "scale": 1.0,
+        "convert": lambda m: m,
+        "vmin": 0.0, "vmax": 6000.0,       # fixed display range (m); peaks saturate white
+        # Classic hypsometric tints: green lowland -> tan -> brown highland -> snow.
+        "stops": [(0.00, (74, 137, 92)),       # green   (lowland)
+                  (0.10, (160, 191, 109)),     # light green
+                  (0.25, (224, 214, 128)),     # pale yellow
+                  (0.45, (191, 150, 92)),      # tan / brown
+                  (0.70, (135, 99, 67)),       # brown   (highland)
+                  (1.00, (245, 245, 245))],    # snow white (peaks)
+    },
 }
 
 
-def tif_path(var: str, month: int) -> Path:
+def tif_path(var: str, month: int | None = None) -> Path:
+    # Static variables (e.g. the DEM) are a single month-less file.
+    if VARIABLES[var].get("static"):
+        return DATA_DIR / f"CHELSA_{var}_{PERIOD}_{VERSION}.tif"
     return DATA_DIR / f"CHELSA_{var}_{month:02d}_{PERIOD}_{VERSION}.tif"
 
 
@@ -178,6 +196,7 @@ def render(var, month, west, east, south, north, w, h, mask=False):
     a pale ocean blue instead of showing the (ocean-covered) source data.
     """
     cfg = VARIABLES[var]
+    scale = cfg.get("scale", SCALE)
     left, bottom, right, top = _bounds()
     world_w, world_h = right - left, top - bottom
     out = np.full((h, w), np.nan, dtype="float32")
@@ -212,7 +231,7 @@ def render(var, month, west, east, south, north, w, h, mask=False):
                 arr = ds.read(1, window=win, out_shape=(ry1 - ry0, cx1 - cx0),
                               resampling=rasterio.enums.Resampling.average,
                               boundless=True, masked=True).astype("float32")
-                patch = cfg["convert"](np.ma.filled(arr, np.nan) * SCALE)
+                patch = cfg["convert"](np.ma.filled(arr, np.nan) * scale)
                 out[ry0:ry1, cx0:cx1] = patch
                 if mask:
                     tr = transform_from_bounds(
@@ -258,7 +277,7 @@ def value_at(var, month, lon, lat):
         v = ds.read(1, window=Window(col, row, 1, 1), masked=True)
     if v.size == 0 or np.ma.is_masked(v) and v.mask.all():
         return None
-    return float(cfg["convert"](float(v[0, 0]) * SCALE))
+    return float(cfg["convert"](float(v[0, 0]) * cfg.get("scale", SCALE)))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -350,6 +369,7 @@ def _config_json():
         "vars": {k: {"label": v["label"], "unit": v["unit"],
                      "vmin": v["vmin"], "vmax": v["vmax"],
                      "log": bool(v.get("log")),
+                     "static": bool(v.get("static")),
                      "stops": _client_stops(k)} for k, v in VARIABLES.items()},
         "bounds": _bounds(),  # left, bottom, right, top
     })
@@ -645,8 +665,9 @@ async function fetchValue() {
     const r = await fetch(`/value?var=${curVar}&month=${curMonth}&lon=${lonD}&lat=${lat}`,
                           { signal: valAbort.signal });
     const d = await r.json();
+    const whole = curVar === 'pr' || curVar === 'orog';   // mm and m read as integers
     tip.textContent = d.value == null ? '—'
-      : `${curVar === 'pr' ? d.value.toFixed(0) : d.value.toFixed(1)} ${d.unit}`;
+      : `${whole ? d.value.toFixed(0) : d.value.toFixed(1)} ${d.unit}`;
     tip.style.display = 'block';
   } catch (err) { /* aborted / network — ignore */ }
 }
@@ -672,6 +693,7 @@ canvas.addEventListener('wheel', e => {
 const monthSlider = document.getElementById('month');
 const monthTicks = document.getElementById('monthTicks');
 const monthList = document.getElementById('monthticks');
+const monthBox = document.getElementById('monthBox');
 // One labelled notch per month: a datalist option (tick mark on the range) plus
 // a positioned label centred under each notch.
 CFG.months.forEach((name, i) => {
@@ -703,6 +725,17 @@ playBtn.addEventListener('click', async () => {
   }
 });
 
+// Static variables (e.g. Altitude) have no time dimension, so the month slider
+// and play button are irrelevant — grey them out and halt any playback.
+function updateMonthControls() {
+  const isStatic = !!CFG.vars[curVar].static;
+  monthSlider.disabled = isStatic;
+  playBtn.disabled = isStatic;
+  monthBox.style.opacity = playBtn.style.opacity = isStatic ? 0.4 : 1;
+  monthBox.style.pointerEvents = isStatic ? 'none' : 'auto';
+  if (isStatic && playing) { playing = false; playBtn.textContent = '▶'; }
+}
+
 const varsBox = document.getElementById('vars');
 CFG.order.forEach(k => {
   const b = document.createElement('button');
@@ -712,7 +745,7 @@ CFG.order.forEach(k => {
     curVar = k;
     varsBox.querySelectorAll('button').forEach(x =>
       x.classList.toggle('active', x.dataset.var === k));
-    setTitle(); refresh();
+    updateMonthControls(); setTitle(); refresh();
   };
   varsBox.appendChild(b);
 });
@@ -738,7 +771,7 @@ window.addEventListener('resize', () => { sizeCanvas(); draw(); scheduleRefresh(
 // expose a little state for debugging / automated checks
 window.__viewer = { view, bbox, setMonth, draw, get curVar() { return curVar; } };
 
-resetView(); setTitle(); refresh(); loadCoastlines();
+resetView(); setTitle(); updateMonthControls(); refresh(); loadCoastlines();
 </script>
 </body>
 </html>

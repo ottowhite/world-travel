@@ -6,6 +6,7 @@ PORT ?= 8765
 serve:
 	uv run scripts/serve.py --port $(PORT)
 
-# Download the CHELSA pr + tas GeoTIFFs into data/ (~6 GB).
+# Download the CHELSA pr + tas + orog (altitude) layers into data/ (~6 GB,
+# idempotent — re-running fetches only what's missing).
 download:
 	uv run scripts/download_data.py

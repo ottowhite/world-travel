@@ -3,8 +3,9 @@
 ## CHELSA climatology viewer
 
 Download and explore the [CHELSA](https://chelsa-climate.org/) V2.1 monthly
-climatologies (1981–2010) of **temperature** and **precipitation** in a
-full-screen, slippy-map-style viewer: pan, zoom, and step through the months.
+climatologies (1981–2010) of **temperature** and **precipitation**, plus a
+static **altitude** (elevation) layer, in a full-screen, slippy-map-style
+viewer: pan, zoom, and step through the months.
 Detail is loaded dynamically — each pan/zoom reads a crop straight from the
 source GeoTIFFs at the resolution the current zoom needs.
 
@@ -27,21 +28,22 @@ Without direnv/nix you can just use uv directly if it is on your PATH.
 ## Usage
 
 ```sh
-make download     # ~6 GB: 12 months × {pr, tas} into data/ (gitignored)
+make download     # ~6 GB: 12 months × {pr, tas} + the altitude DEM, into data/
 make serve        # starts the viewer -> http://localhost:8765
 ```
 
 (`make serve PORT=9000` to pick a port.) Then in the viewer:
 
-- toggle between **Temperature** and **Precipitation**,
+- toggle between **Temperature**, **Precipitation** and **Altitude**,
 - step through the 12 months with the **slider** (a labelled notch per month) or
-  the **play** button,
+  the **play** button (greyed out for Altitude, which has no time dimension),
 - **drag** to pan, **scroll** to zoom, **hover** to read the value at a point —
   the map wraps around on both axes.
   The colour bar uses a **fixed absolute range** per variable, so it never
   changes on pan/zoom: temperature is a full **ROYGBIV** ramp over −40..40 °C
   (violet = coldest, red = hottest); precipitation is a **log** scale over
-  1..400 mm/month (pale = dry, deep blue = wet; ≥400 mm saturates).
+  1..400 mm/month (pale = dry, deep blue = wet; ≥400 mm saturates); altitude is a
+  **hypsometric** ramp over 0..6000 m (green lowland → tan → brown → snowy peaks).
 - toggle the **Coastlines** overlay (Natural Earth 1:50m, bundled in `assets/`),
   on by default. While it is on, ocean (anything outside the Natural Earth land
   polygons) is painted a flat **pale blue** and only land data is shown; turn it
@@ -50,7 +52,9 @@ make serve        # starts the viewer -> http://localhost:8765
 ## How it works
 
 - `scripts/download_data.py` streams the monthly GeoTIFFs from EnviCloud,
-  skipping any already fully downloaded.
+  skipping any already fully downloaded (idempotent). The altitude layer is
+  CHELSA's static input DEM, streamed once and transcoded locally into a compact
+  tiled int16 GeoTIFF with overviews so it reads as fast as the climate layers.
 - `scripts/serve.py` is a small HTTP server. The page is a full-screen `<canvas>`;
   on every pan/zoom it asks `GET /render?var=&month=&west=&east=&south=&north=&w=&h=`
   for the visible bbox, and the server does a windowed, decimated read of that

@@ -3,12 +3,18 @@
 ## Project
 
 Download CHELSA V2.1 monthly climatologies (1981–2010) of temperature (`tas`)
-and precipitation (`pr`) from EnviDat/EnviCloud and explore them in a
-full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
+and precipitation (`pr`), plus the static elevation/altitude DEM (`orog`), from
+EnviDat/EnviCloud and explore them in a full-screen, dynamically-rendered map
+viewer (pan/zoom/wrap, per-month slider).
 
 ## Layout
 
-- `scripts/download_data.py` — streams monthly GeoTIFFs into `data/` (gitignored).
+- `scripts/download_data.py` — streams monthly GeoTIFFs into `data/` (gitignored);
+  idempotent (HEAD-size skip), so re-running fetches only what's missing. The
+  static `orog` layer is CHELSA's input DEM (`dem_latlong.nc`, ~3.6 GB float32) on
+  the SAME 30 arc-sec grid; it's streamed once then transcoded locally to a tiled
+  **int16** GeoTIFF with internal overviews (`CHELSA_orog_1981-2010_V.2.1.tif`) and
+  the source `.nc` is deleted. `--vars orog` fetches just altitude.
 - `scripts/serve.py` — the viewer. A stdlib `ThreadingHTTPServer`: `GET /` serves a
   full-page `<canvas>` page; `GET /render?var&month&west&east&south&north&w&h` does a
   windowed/decimated rasterio read of the visible bbox (using the GeoTIFFs' internal
@@ -23,7 +29,11 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
   absolute per-variable range set in each `VARIABLES` entry and exposed via the page
   config, so the colour bar is static for a variable and never rescales on pan/zoom.
   `tas`: ROYGBIV `stops` (violet=cold..red=hot), linear −40..40 °C. `pr`: `devon_r`
-  cmap, LOG10 over 1..400 mm/month (`"log": True`; saturates ≥400). Front-end: left-drag pan, wheel
+  cmap, LOG10 over 1..400 mm/month (`"log": True`; saturates ≥400). `orog`:
+  hypsometric `stops` (green→tan→brown→snow), linear 0..6000 m; it's a `"static"`
+  layer (one month-less GeoTIFF, `"scale": 1.0`, identity convert) so `render()`/
+  `value_at()` ignore the month, and the front-end greys out the slider + play.
+  Front-end: left-drag pan, wheel
   zoom, var toggle, a month slider with a labelled notch per month (datalist ticks +
   positioned `#monthTicks` labels, click a label to jump), play, colour bar, and a
   hover read-out (`GET /value?var&month&lon&lat` → JSON value at a point, throttled).
@@ -62,6 +72,12 @@ full-screen, dynamically-rendered map viewer (pan/zoom/wrap, per-month slider).
   In `serve.py`, a variable specifies either `"cmap"` (named scientific colormap,
   sampled into the LUT and into ~33 client colour-bar stops) or `"stops"`; an
   optional `"log": True` switches `render()` and the colour-bar labels to log space.
+  `"static": True` marks a month-less layer (one file via `tif_path`), and
+  `"scale"` overrides the default `0.1` DN→physical factor (`orog` uses `1.0`,
+  metres). `tif_path(var, month=None)` returns the month-less name for static vars.
+- `orog` (altitude): 30 arc-sec global DEM, EPSG:4326, same grid as the climate
+  layers; stored as int16 metres, nodata −32768 (ocean), so it's transparent over
+  sea and obeys the same coastline ocean-mask toggle.
 - URL pattern:
   `https://os.unil.cloud.switch.ch/chelsa02/chelsa/global/climatologies/{var}/1981-2010/CHELSA_{var}_{MM}_1981-2010_V.2.1.tif`
 
