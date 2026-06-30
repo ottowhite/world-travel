@@ -38,7 +38,14 @@ viewer (pan/zoom/wrap, per-month slider).
   positioned `#monthTicks` labels, click a label to jump), play, colour bar, and a
   hover read-out (`GET /value?var&month&lon&lat` → JSON value at a point, throttled).
   No build step / no `output/`.
-  `GET /coastline.geojson` serves the bundled coastline (read once, cached). The
+  `GET /country_labels.json` serves a tiny `[name, lon, lat, LABELRANK]` array
+  (~7 KB, ~242 countries, pre-extracted from Natural Earth 50m admin-0
+  countries). The front-end fetches it once and `drawCountryLabels()` strokes a
+  dark halo + light fill at each label's lon/lat. A "Labels" toggle (default on,
+  next to Coastlines) shows/hides them. To stay legible at world zoom we cap
+  the visible LABELRANK by view-width: ≤3 when wider than 250°, ≤4 over 120°,
+  …up to all ranks (≤7) when zoomed in past 30°. `GET /coastline.geojson`
+  serves the bundled coastline (read once, cached). The
   front-end fetches it once, flattens LineString/MultiLineString to lon/lat
   polylines, and in `draw()` strokes them over the raster (dark halo + light line)
   replicated across the SAME ±MAXK wrap copies the raster uses. A default-on
@@ -50,6 +57,10 @@ viewer (pan/zoom/wrap, per-month slider).
 - `assets/ne_50m_coastline.geojson` / `assets/ne_50m_land.geojson` — Natural Earth
   1:50m coastline (overlay) and land polygons (ocean mask), EPSG:4326, ~1.6 MB each,
   committed (NOT gitignored) so the viewer works offline/reproducibly.
+- `assets/country_labels.json` — pre-extracted `[name, lon, lat, LABELRANK]`
+  for the ~242 countries in Natural Earth 50m admin-0, ~7 KB. Generated once
+  from `ne_50m_admin_0_countries.geojson` (NAME/LABEL_X/LABEL_Y/LABELRANK) —
+  the full polygon file isn't checked in since only the label points are used.
 - `Makefile` — `make serve` (PORT=…) runs the viewer; `make download` fetches data.
 - `shell.nix` / `.envrc` — Nix dev shell (uv + curl + nodejs_22), loaded by direnv (`use nix`).
 - `.mcp.json` — Playwright MCP server, launched via `nix-shell --run "npx -y @playwright/mcp ..."`

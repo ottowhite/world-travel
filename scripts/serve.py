@@ -46,6 +46,7 @@ DATA_DIR = ROOT / "data"
 ASSETS_DIR = ROOT / "assets"
 COASTLINE_PATH = ASSETS_DIR / "ne_50m_coastline.geojson"
 LAND_PATH = ASSETS_DIR / "ne_50m_land.geojson"
+COUNTRY_LABELS_PATH = ASSETS_DIR / "country_labels.json"
 PERIOD = "1981-2010"
 VERSION = "V.2.1"
 SCALE = 0.1  # CHELSA V2.1 DN -> physical, before any offset
@@ -175,6 +176,12 @@ def _coastline_bytes() -> bytes:
 
 
 @lru_cache(maxsize=1)
+def _country_labels_bytes() -> bytes:
+    """Pre-extracted [name, lon, lat, rank] tuples for ~242 countries."""
+    return COUNTRY_LABELS_PATH.read_bytes()
+
+
+@lru_cache(maxsize=1)
 def _land_geoms():
     """Natural Earth land polygons (GeoJSON geometries) for the ocean mask."""
     gj = json.loads(LAND_PATH.read_text())
@@ -294,6 +301,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_value(parse_qs(url.query))
         if url.path == "/coastline.geojson":
             return self._send_coastline()
+        if url.path == "/country_labels.json":
+            return self._send_country_labels()
         self.send_error(404)
 
     def _send_value(self, q):
@@ -315,6 +324,17 @@ class Handler(BaseHTTPRequestHandler):
     def _send_coastline(self):
         try:
             body = _coastline_bytes()
+        except OSError:
+            return self.send_error(404)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _send_country_labels(self):
+        try:
+            body = _country_labels_bytes()
         except OSError:
             return self.send_error(404)
         self.send_response(200)
@@ -432,6 +452,7 @@ PAGE = r"""<!doctype html>
   <div class="g" id="vars"></div>
   <div class="g">
     <label><input id="coastToggle" type="checkbox" checked/> Coastlines</label>
+    <label><input id="labelsToggle" type="checkbox" checked/> Labels</label>
   </div>
   <div class="g">
     <button id="play">▶</button>
@@ -459,7 +480,9 @@ const view = { cx: 0, cy: (T + B) / 2, dpp: 1 };   // centre lon/lat, deg per ba
 let last = null;                                    // {bitmap, west, east, south, north}
 let pending = null, refreshTimer = null, playing = false;
 let coastlines = null;                              // [[ [lon,lat], ... ], ...]
+let countryLabels = null;                            // [[name, lon, lat, rank], ...]
 let showCoast = true;
+let showLabels = true;
 // LRU cache of decoded render bitmaps keyed by exact request URL. A full year of
 // play at one bbox+variable is 12 entries, and toggling the variable doubles
 // that, so 24 covers the common re-watch case without growing unbounded under
@@ -482,6 +505,17 @@ async function loadCoastlines() {
     coastlines = out;
     draw();
   } catch (e) { console.error('coastline load failed', e); }
+}
+
+// Country labels — a small JSON file of [name, lon, lat, LABELRANK] for each
+// Natural Earth admin-0 country. LABELRANK is 2 (huge: USA, China) through 7
+// (tiny territories); we use it to suppress clutter when zoomed out.
+async function loadCountryLabels() {
+  try {
+    const r = await fetch('/country_labels.json');
+    countryLabels = await r.json();
+    draw();
+  } catch (e) { console.error('country labels load failed', e); }
 }
 
 function sizeCanvas() {
@@ -515,8 +549,40 @@ function draw() {
     }
   }
   if (showCoast && coastlines) drawCoastlines(v, dppx, dppy);
+  if (showLabels && countryLabels) drawCountryLabels(v, dppx, dppy);
 }
 const MAXK = 4;
+
+function drawCountryLabels(v, dppx, dppy) {
+  // LABELRANK 2 = biggest (USA, China...) up to 7 = smallest territory. At a
+  // wider view we'd just stack text on top of itself, so cap rank by zoom.
+  const viewW = v.east - v.west;
+  const maxRank = viewW > 250 ? 3
+                : viewW > 120 ? 4
+                : viewW > 60  ? 5
+                : viewW > 30  ? 6
+                              : 7;
+  const dpr = canvas.width / canvas.clientWidth;
+  ctx.font = `${Math.round(11 * dpr)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 3 * dpr;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  for (const [name, lon, lat, rank] of countryLabels) {
+    if (rank > maxRank) continue;
+    if (lat < v.south || lat > v.north) continue;
+    for (let kx = -MAXK; kx <= MAXK; kx++) {
+      const dlon = lon + kx * WORLD_W;
+      if (dlon < v.west || dlon > v.east) continue;
+      const x = (dlon - v.west) / dppx;
+      const y = (v.north - lat) / dppy;
+      ctx.strokeText(name, x, y);
+      ctx.fillText(name, x, y);
+    }
+  }
+}
 
 function drawCoastlines(v, dppx, dppy) {
   ctx.lineJoin = 'round'; ctx.lineCap = 'round';
@@ -752,6 +818,9 @@ CFG.order.forEach(k => {
 const coastToggle = document.getElementById('coastToggle');
 // Toggling coastlines also flips ocean masking, which is server-side, so refetch.
 coastToggle.addEventListener('change', e => { showCoast = e.target.checked; refresh(); });
+const labelsToggle = document.getElementById('labelsToggle');
+// Labels are pure overlay (no server fetch), so toggling just redraws.
+labelsToggle.addEventListener('change', e => { showLabels = e.target.checked; draw(); });
 
 function setTitle() {
   document.getElementById('title').textContent =
@@ -771,7 +840,7 @@ window.addEventListener('resize', () => { sizeCanvas(); draw(); scheduleRefresh(
 // expose a little state for debugging / automated checks
 window.__viewer = { view, bbox, setMonth, draw, get curVar() { return curVar; } };
 
-resetView(); setTitle(); updateMonthControls(); refresh(); loadCoastlines();
+resetView(); setTitle(); updateMonthControls(); refresh(); loadCoastlines(); loadCountryLabels();
 </script>
 </body>
 </html>
